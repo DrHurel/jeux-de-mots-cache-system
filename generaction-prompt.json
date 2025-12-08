@@ -1,0 +1,47 @@
+{
+    "technical-specifications": {
+        "language": "java 21",
+        "package-management": "Maven",
+        "libraries": [
+            "Junit",
+            "Mockito",
+            "logging-framework (e.g., SLF4J with Logback)",
+            "HTTP client (e.g., Apache HttpClient or OkHttp)",
+            "prometheus-client"
+        ],
+        "coding-style": "Google Java Style Guide",
+        "documentation-style": "Javadoc",
+        "testing-framework": "JUnit lts",
+        "build-tool": "Maven",
+        "version-control": "Git"
+    },
+    "technical-tasks": {
+        "project-setup": "Initialize a Maven project with the necessary dependencies and configurations for Java 21.",
+        "openapi-description extraction": {
+            "initial-extraction-script": "curl -v https://jdm-api.demo.lirmm.fr/schema",
+            "next-steps" : "parse the curl result to extract the specifications of each route with specific curl commands to interact with the API documentation",
+            "final-goal": "generate Java client code to interact with the API"
+        },
+        "testing-setup": "Configure JUnit and Mockito for unit and integration testing."
+    },
+    "project-requirements": {
+        "functionality": "Create a Java libraries that wrap the jdm-api.demo.lirmm.fr with a cache layer using in-memory caching. Test will be run during the devellopment to ensure the cache is working as expected.",
+        "cache-implementation-specifications": {
+            "NOTE": "no caching libraries",
+            "thread-safe": "Proper concurrency management (multiple simultaneous threads)",
+            "generic": "Cache<K, V> with parameterizable types",
+            "configurable": "Maximum size, eviction strategy, TTL",
+            "observable": "Real-time statistics (hits, misses, success rate)",
+            "performant": "O(1) or O(log n) complexity for main operations",
+            "minimal-public-api": "public interface Cache<K, V> {V get(K key);void put(K key, V value);void invalidate(K key);void clear();CacheStats getStats();}"
+        },
+        "performance": "The cache should improve response times by at least 50% for repeated requests.",
+        "caching-strategy": "Implement 2 caching strategies: Least Recently Used (LRU) and Time-To-Live (TTL) based eviction policies.",
+        "scalability": "The caching solution should handle up to 10,000 concurrent requests without significant performance degradation.",
+        "reliability": "The cache should have a hit rate of at least 80% under typical usage patterns.",
+        "security": "Ensure that sensitive data is not stored in the cache and implement appropriate access controls.",
+        "usability": "The library should have a simple and intuitive API for developers to integrate the caching functionality.",
+        "maintainability": "The code should be modular and well-documented to facilitate future enhancements and bug fixes.",
+        "testing": "Comprehensive unit and integration tests should be provided to validate the caching functionality and performance improvements."
+    }
+}
