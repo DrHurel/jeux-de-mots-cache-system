@@ -1,14 +1,12 @@
 package fr.lirmm.jdm.cache;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,8 +17,8 @@ import org.slf4j.LoggerFactory;
  * <p>This cache evicts entries after they have existed for a specified duration. Entries are
  * checked for expiration both on access and via a background cleanup task.
  *
- * <p>Thread safety is provided through a ConcurrentHashMap for the main storage and a ReadWriteLock
- * for statistics tracking.
+ * <p>Thread safety is provided through a ConcurrentHashMap for the main storage and atomic
+ * counters for lock-free statistics tracking.
  *
  * @param <K> the type of keys maintained by this cache
  * @param <V> the type of mapped values
@@ -30,12 +28,15 @@ public class TtlCache<K, V> implements Cache<K, V> {
   private static final Logger logger = LoggerFactory.getLogger(TtlCache.class);
   private static final int CLEANUP_DIVISOR = 2;
   private static final long MIN_CLEANUP_INTERVAL_MS = 1000L;
+  private static final boolean TRACE_ENABLED = logger.isTraceEnabled();
+  private static final boolean DEBUG_ENABLED = logger.isDebugEnabled();
 
   private final int maxSize;
-  private final Duration ttl;
+  private final long ttlMillis;
   private final Map<K, CacheEntry<V>> cache;
-  private final ReadWriteLock statsLock;
-  private final CacheStats.Builder statsBuilder;
+  private final AtomicLong hits;
+  private final AtomicLong misses;
+  private final AtomicLong evictions;
   private final ScheduledExecutorService cleanupExecutor;
 
   /**
@@ -54,10 +55,11 @@ public class TtlCache<K, V> implements Cache<K, V> {
     }
 
     this.maxSize = maxSize;
-    this.ttl = ttl;
+    this.ttlMillis = ttl.toMillis();
     this.cache = new ConcurrentHashMap<>(maxSize);
-    this.statsLock = new ReentrantReadWriteLock();
-    this.statsBuilder = new CacheStats.Builder();
+    this.hits = new AtomicLong(0);
+    this.misses = new AtomicLong(0);
+    this.evictions = new AtomicLong(0);
 
     // Background cleanup task runs every TTL/2 interval
     this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -66,11 +68,11 @@ public class TtlCache<K, V> implements Cache<K, V> {
       return thread;
     });
 
-    long cleanupIntervalMs = Math.max(ttl.toMillis() / CLEANUP_DIVISOR, MIN_CLEANUP_INTERVAL_MS);
+    long cleanupIntervalMs = Math.max(ttlMillis / CLEANUP_DIVISOR, MIN_CLEANUP_INTERVAL_MS);
     cleanupExecutor.scheduleAtFixedRate(
         this::cleanupExpiredEntries, cleanupIntervalMs, cleanupIntervalMs, TimeUnit.MILLISECONDS);
 
-    logger.info("Created TTL cache with maxSize={}, ttl={}", maxSize, ttl);
+    logger.info("Created TTL cache with maxSize={}, ttl={}ms", maxSize, ttlMillis);
   }
 
   /**
@@ -93,21 +95,28 @@ public class TtlCache<K, V> implements Cache<K, V> {
     CacheEntry<V> entry = cache.get(key);
 
     if (entry == null) {
-      recordMiss();
-      logger.trace("Cache miss for key: {}", key);
+      misses.incrementAndGet();
+      if (TRACE_ENABLED) {
+        logger.trace("Cache miss for key: {}", key);
+      }
       return null;
     }
 
-    if (entry.isExpired()) {
+    long now = System.currentTimeMillis();
+    if (entry.isExpired(now)) {
       cache.remove(key);
-      recordMiss();
-      recordEviction();
-      logger.trace("Cache miss (expired) for key: {}", key);
+      misses.incrementAndGet();
+      evictions.incrementAndGet();
+      if (TRACE_ENABLED) {
+        logger.trace("Cache miss (expired) for key: {}", key);
+      }
       return null;
     }
 
-    recordHit();
-    logger.trace("Cache hit for key: {}", key);
+    hits.incrementAndGet();
+    if (TRACE_ENABLED) {
+      logger.trace("Cache hit for key: {}", key);
+    }
     return entry.getValue();
   }
 
@@ -122,15 +131,18 @@ public class TtlCache<K, V> implements Cache<K, V> {
       evictOldestEntry();
     }
 
-    CacheEntry<V> entry = new CacheEntry<>(value, Instant.now().plus(ttl));
+    long expiresAt = System.currentTimeMillis() + ttlMillis;
+    CacheEntry<V> entry = new CacheEntry<>(value, expiresAt);
     cache.put(key, entry);
-    logger.trace("Added entry to cache: key={}, expiresAt={}", key, entry.getExpiresAt());
+    if (TRACE_ENABLED) {
+      logger.trace("Added entry to cache: key={}, expiresAt={}", key, expiresAt);
+    }
   }
 
   @Override
   public void invalidate(K key) {
     CacheEntry<V> removed = cache.remove(key);
-    if (removed != null) {
+    if (removed != null && DEBUG_ENABLED) {
       logger.debug("Invalidated cache entry: {}", key);
     }
   }
@@ -139,23 +151,15 @@ public class TtlCache<K, V> implements Cache<K, V> {
   public void clear() {
     int size = cache.size();
     cache.clear();
-    statsLock.writeLock().lock();
-    try {
-      statsBuilder.reset();
-    } finally {
-      statsLock.writeLock().unlock();
-    }
+    hits.set(0);
+    misses.set(0);
+    evictions.set(0);
     logger.info("Cleared cache ({} entries removed)", size);
   }
 
   @Override
   public CacheStats getStats() {
-    statsLock.readLock().lock();
-    try {
-      return statsBuilder.build(cache.size());
-    } finally {
-      statsLock.readLock().unlock();
-    }
+    return new CacheStats(hits.get(), misses.get(), evictions.get(), cache.size());
   }
 
   /**
@@ -182,7 +186,7 @@ public class TtlCache<K, V> implements Cache<K, V> {
    * @return the TTL duration
    */
   public Duration getTtl() {
-    return ttl;
+    return Duration.ofMillis(ttlMillis);
   }
 
   /**
@@ -197,19 +201,19 @@ public class TtlCache<K, V> implements Cache<K, V> {
 
   private void cleanupExpiredEntries() {
     try {
-      Instant now = Instant.now();
+      long now = System.currentTimeMillis();
       int removedCount = 0;
 
       for (Map.Entry<K, CacheEntry<V>> entry : cache.entrySet()) {
         if (entry.getValue().isExpired(now)) {
           if (cache.remove(entry.getKey(), entry.getValue())) {
-            recordEviction();
+            evictions.incrementAndGet();
             removedCount++;
           }
         }
       }
 
-      if (removedCount > 0) {
+      if (removedCount > 0 && DEBUG_ENABLED) {
         logger.debug("Cleaned up {} expired entries", removedCount);
       }
     } catch (Exception e) {
@@ -220,11 +224,11 @@ public class TtlCache<K, V> implements Cache<K, V> {
   private void evictOldestEntry() {
     // Find the entry with the earliest expiration time
     K oldestKey = null;
-    Instant oldestExpiration = Instant.MAX;
+    long oldestExpiration = Long.MAX_VALUE;
 
     for (Map.Entry<K, CacheEntry<V>> entry : cache.entrySet()) {
-      Instant expiration = entry.getValue().getExpiresAt();
-      if (expiration.isBefore(oldestExpiration)) {
+      long expiration = entry.getValue().getExpiresAt();
+      if (expiration < oldestExpiration) {
         oldestExpiration = expiration;
         oldestKey = entry.getKey();
       }
@@ -232,42 +236,23 @@ public class TtlCache<K, V> implements Cache<K, V> {
 
     if (oldestKey != null) {
       cache.remove(oldestKey);
-      recordEviction();
-      logger.debug("Evicted oldest entry: {}", oldestKey);
-    }
-  }
-
-  private void recordHit() {
-    updateStats(CacheStats.Builder::recordHit);
-  }
-
-  private void recordMiss() {
-    updateStats(CacheStats.Builder::recordMiss);
-  }
-
-  private void recordEviction() {
-    updateStats(CacheStats.Builder::recordEviction);
-  }
-
-  private void updateStats(java.util.function.Consumer<CacheStats.Builder> operation) {
-    statsLock.readLock().lock();
-    try {
-      operation.accept(statsBuilder);
-    } finally {
-      statsLock.readLock().unlock();
+      evictions.incrementAndGet();
+      if (DEBUG_ENABLED) {
+        logger.debug("Evicted oldest entry: {}", oldestKey);
+      }
     }
   }
 
   /**
-   * A cache entry with an expiration timestamp.
+   * A cache entry with an expiration timestamp in milliseconds.
    *
    * @param <V> the type of the cached value
    */
   private static class CacheEntry<V> {
     private final V value;
-    private final Instant expiresAt;
+    private final long expiresAt;
 
-    CacheEntry(V value, Instant expiresAt) {
+    CacheEntry(V value, long expiresAt) {
       this.value = value;
       this.expiresAt = expiresAt;
     }
@@ -276,16 +261,12 @@ public class TtlCache<K, V> implements Cache<K, V> {
       return value;
     }
 
-    Instant getExpiresAt() {
+    long getExpiresAt() {
       return expiresAt;
     }
 
-    boolean isExpired() {
-      return isExpired(Instant.now());
-    }
-
-    boolean isExpired(Instant now) {
-      return now.isAfter(expiresAt);
+    boolean isExpired(long now) {
+      return now > expiresAt;
     }
   }
 }

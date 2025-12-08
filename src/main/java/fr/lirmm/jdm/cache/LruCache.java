@@ -2,8 +2,7 @@ package fr.lirmm.jdm.cache;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.StampedLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,8 +12,8 @@ import org.slf4j.LoggerFactory;
  * <p>This cache evicts the least recently used entry when the maximum size is reached. All
  * operations are O(1) time complexity thanks to the LinkedHashMap's access-order mode.
  *
- * <p>Thread safety is provided through a ReadWriteLock, allowing multiple concurrent readers but
- * exclusive writes.
+ * <p>Thread safety is provided through a StampedLock, offering better read performance through
+ * optimistic reads and reduced contention.
  *
  * @param <K> the type of keys maintained by this cache
  * @param <V> the type of mapped values
@@ -23,10 +22,12 @@ public class LruCache<K, V> implements Cache<K, V> {
 
   private static final Logger logger = LoggerFactory.getLogger(LruCache.class);
   private static final float LOAD_FACTOR = 0.75f;
+  private static final boolean TRACE_ENABLED = logger.isTraceEnabled();
+  private static final boolean DEBUG_ENABLED = logger.isDebugEnabled();
 
   private final int maxSize;
   private final Map<K, V> cache;
-  private final ReadWriteLock lock;
+  private final StampedLock lock;
   private final CacheStats.Builder statsBuilder;
 
   /**
@@ -40,7 +41,7 @@ public class LruCache<K, V> implements Cache<K, V> {
       throw new IllegalArgumentException("maxSize must be at least 1");
     }
     this.maxSize = maxSize;
-    this.lock = new ReentrantReadWriteLock();
+    this.lock = new StampedLock();
     this.statsBuilder = new CacheStats.Builder();
 
     // LinkedHashMap with access-order mode (true) for LRU behavior
@@ -51,7 +52,9 @@ public class LruCache<K, V> implements Cache<K, V> {
             boolean shouldRemove = size() > LruCache.this.maxSize;
             if (shouldRemove) {
               statsBuilder.recordEviction();
-              logger.debug("Evicting LRU entry: {}", eldest.getKey());
+              if (DEBUG_ENABLED) {
+                logger.debug("Evicting LRU entry: {}", eldest.getKey());
+              }
             }
             return shouldRemove;
           }
@@ -77,20 +80,33 @@ public class LruCache<K, V> implements Cache<K, V> {
 
   @Override
   public V get(K key) {
-    lock.readLock().lock();
-    try {
-      V value = cache.get(key);
-      if (value != null) {
-        statsBuilder.recordHit();
+    // Try optimistic read first (zero-cost if no writers)
+    long stamp = lock.tryOptimisticRead();
+    V value = cache.get(key);
+    
+    if (!lock.validate(stamp)) {
+      // Optimistic read failed, fall back to read lock
+      stamp = lock.readLock();
+      try {
+        value = cache.get(key);
+      } finally {
+        lock.unlockRead(stamp);
+      }
+    }
+    
+    // Update stats (separate from read operation)
+    if (value != null) {
+      statsBuilder.recordHit();
+      if (TRACE_ENABLED) {
         logger.trace("Cache hit for key: {}", key);
-      } else {
-        statsBuilder.recordMiss();
+      }
+    } else {
+      statsBuilder.recordMiss();
+      if (TRACE_ENABLED) {
         logger.trace("Cache miss for key: {}", key);
       }
-      return value;
-    } finally {
-      lock.readLock().unlock();
     }
+    return value;
   }
 
   @Override
@@ -99,48 +115,50 @@ public class LruCache<K, V> implements Cache<K, V> {
       throw new IllegalArgumentException("Key and value must not be null");
     }
 
-    lock.writeLock().lock();
+    long stamp = lock.writeLock();
     try {
       cache.put(key, value);
-      logger.trace("Added entry to cache: key={}", key);
+      if (TRACE_ENABLED) {
+        logger.trace("Added entry to cache: key={}", key);
+      }
     } finally {
-      lock.writeLock().unlock();
+      lock.unlockWrite(stamp);
     }
   }
 
   @Override
   public void invalidate(K key) {
-    lock.writeLock().lock();
+    long stamp = lock.writeLock();
     try {
       V removed = cache.remove(key);
-      if (removed != null) {
+      if (removed != null && DEBUG_ENABLED) {
         logger.debug("Invalidated cache entry: {}", key);
       }
     } finally {
-      lock.writeLock().unlock();
+      lock.unlockWrite(stamp);
     }
   }
 
   @Override
   public void clear() {
-    lock.writeLock().lock();
+    long stamp = lock.writeLock();
     try {
       int size = cache.size();
       cache.clear();
       statsBuilder.reset();
       logger.info("Cleared cache ({} entries removed)", size);
     } finally {
-      lock.writeLock().unlock();
+      lock.unlockWrite(stamp);
     }
   }
 
   @Override
   public CacheStats getStats() {
-    lock.readLock().lock();
+    long stamp = lock.readLock();
     try {
       return statsBuilder.build(cache.size());
     } finally {
-      lock.readLock().unlock();
+      lock.unlockRead(stamp);
     }
   }
 
@@ -150,12 +168,17 @@ public class LruCache<K, V> implements Cache<K, V> {
    * @return the number of entries in the cache
    */
   public int size() {
-    lock.readLock().lock();
-    try {
-      return cache.size();
-    } finally {
-      lock.readLock().unlock();
+    long stamp = lock.tryOptimisticRead();
+    int size = cache.size();
+    if (!lock.validate(stamp)) {
+      stamp = lock.readLock();
+      try {
+        size = cache.size();
+      } finally {
+        lock.unlockRead(stamp);
+      }
     }
+    return size;
   }
 
   /**
@@ -174,11 +197,16 @@ public class LruCache<K, V> implements Cache<K, V> {
    * @return true if the cache contains the key
    */
   public boolean containsKey(K key) {
-    lock.readLock().lock();
-    try {
-      return cache.containsKey(key);
-    } finally {
-      lock.readLock().unlock();
+    long stamp = lock.tryOptimisticRead();
+    boolean contains = cache.containsKey(key);
+    if (!lock.validate(stamp)) {
+      stamp = lock.readLock();
+      try {
+        contains = cache.containsKey(key);
+      } finally {
+        lock.unlockRead(stamp);
+      }
     }
+    return contains;
   }
 }
