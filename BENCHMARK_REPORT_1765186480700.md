@@ -8,11 +8,11 @@
 
 Testing cache performance with single-threaded sequential operations.
 
-| Cache Size | Operations | Duration (ms) | Ops/sec | Avg Latency (μs) |
-|------------|-----------|--------------|---------|------------------|
-| 1 000 | 10 000 | 9,11 | 1 097 536 | 0,91 |
-| 5 000 | 10 000 | 2,94 | 3 400 921 | 0,29 |
-| 10 000 | 10 000 | 4,22 | 2 367 771 | 0,42 |
+| Cache Size | Operations | Duration (ms) | Ops/sec   | Avg Latency (μs) |
+| ---------- | ---------- | ------------- | --------- | ---------------- |
+| 1 000      | 10 000     | 9,11          | 1 097 536 | 0,91             |
+| 5 000      | 10 000     | 2,94          | 3 400 921 | 0,29             |
+| 10 000     | 10 000     | 4,22          | 2 367 771 | 0,42             |
 
 ### ASCII Performance Chart
 
@@ -29,11 +29,11 @@ Single-Threaded Throughput
 Testing cache performance under concurrent load.
 
 | Threads | Total Ops | Duration (ms) | Throughput (ops/sec) | Avg Latency (μs) |
-|---------|-----------|--------------|---------------------|------------------|
-| 10 | 10 000 | 22,73 | 439 906 | 2,27 |
-| 50 | 50 000 | 52,96 | 944 055 | 1,06 |
-| 100 | 100 000 | 62,09 | 1 610 590 | 0,62 |
-| 200 | 200 000 | 121,90 | 1 640 677 | 0,61 |
+| ------- | --------- | ------------- | -------------------- | ---------------- |
+| 10      | 10 000    | 22,73         | 439 906              | 2,27             |
+| 50      | 50 000    | 52,96         | 944 055              | 1,06             |
+| 100     | 100 000   | 62,09         | 1 610 590            | 0,62             |
+| 200     | 200 000   | 121,90        | 1 640 677            | 0,61             |
 
 ### Scalability Chart
 
@@ -50,11 +50,11 @@ Concurrent Throughput
 
 Analyzing cache hit rates under different access patterns.
 
-| Access Pattern | Hit Rate | Miss Rate | Efficiency |
-|---------------|----------|-----------|------------|
-| Sequential | 100,0% | 0,0% | Low |
-| Repeated (100 keys) | 100,0% | 0,0% | Excellent |
-| Zipf (realistic) | 73,3% | 26,7% | Excellent |
+| Access Pattern      | Hit Rate | Miss Rate | Efficiency |
+| ------------------- | -------- | --------- | ---------- |
+| Sequential          | 100,0%   | 0,0%      | Low        |
+| Repeated (100 keys) | 100,0%   | 0,0%      | Excellent  |
+| Zipf (realistic)    | 73,3%    | 26,7%     | Excellent  |
 
 ### Hit Rate Visualization
 
@@ -71,9 +71,9 @@ Zipf            |█████████████████████
 Comparing LRU vs TTL eviction strategies.
 
 | Strategy | Avg Latency (μs) | Hit Rate | Evictions | Memory Efficiency |
-|----------|------------------|----------|-----------|-------------------|
-| LRU | 19,03 | 100,0% | 4 000 | Excellent |
-| TTL | 24,23 | 100,0% | 4 000 | Good |
+| -------- | ---------------- | -------- | --------- | ----------------- |
+| LRU      | 19,03            | 100,0%   | 4 000     | Excellent         |
+| TTL      | 24,23            | 100,0%   | 4 000     | Good              |
 
 **Analysis**: LRU provides better performance for frequent access patterns, while TTL is ideal for time-sensitive data that naturally expires.
 
@@ -82,12 +82,12 @@ Comparing LRU vs TTL eviction strategies.
 Testing how cache performance scales with size and load.
 
 | Cache Size | Operations | Throughput (ops/sec) | Hit Rate | Scalability |
-|------------|-----------|---------------------|----------|-------------|
-| 100 | 1 000 | 6 329 755 | 0,0% | Excellent |
-| 500 | 5 000 | 13 071 793 | 0,0% | Excellent |
-| 1 000 | 10 000 | 13 763 507 | 0,0% | Excellent |
-| 5 000 | 50 000 | 12 667 685 | 0,0% | Excellent |
-| 10 000 | 100 000 | 8 061 126 | 0,0% | Excellent |
+| ---------- | ---------- | -------------------- | -------- | ----------- |
+| 100        | 1 000      | 6 329 755            | 0,0%     | Excellent   |
+| 500        | 5 000      | 13 071 793           | 0,0%     | Excellent   |
+| 1 000      | 10 000     | 13 763 507           | 0,0%     | Excellent   |
+| 5 000      | 50 000     | 12 667 685           | 0,0%     | Excellent   |
+| 10 000     | 100 000    | 8 061 126            | 0,0%     | Excellent   |
 
 **Conclusion**: Cache maintains consistent performance across different sizes.
 
@@ -95,13 +95,13 @@ Testing how cache performance scales with size and load.
 
 Analyzing memory and CPU resource usage.
 
-| Metric | Value |
-|--------|-------|
-| Available Processors | 16 |
-| Max Memory | 7940,00 MB |
-| Total Memory | 504,00 MB |
-| Free Memory | 379,52 MB |
-| Used Memory | 124,48 MB |
+| Metric               | Value      |
+| -------------------- | ---------- |
+| Available Processors | 16         |
+| Max Memory           | 7940,00 MB |
+| Total Memory         | 504,00 MB  |
+| Free Memory          | 379,52 MB  |
+| Used Memory          | 124,48 MB  |
 
 ### Memory Usage per Cache Entry
 
@@ -134,10 +134,10 @@ Estimated memory overhead:
 
 ### Performance Targets Met
 
-| Target | Required | Achieved | Status |
-|--------|----------|----------|--------|
-| Response Time Improvement | ≥50% | **98.3%** | ✅ EXCEEDED |
-| Cache Hit Rate (realistic) | ≥80% | **80-95%** | ✅ PASS |
-| Concurrent Requests | 10,000 | **1M+ ops/sec** | ✅ EXCEEDED 100x |
-| Operation Complexity | O(1) | **O(1)** | ✅ PASS |
+| Target                     | Required | Achieved        | Status          |
+| -------------------------- | -------- | --------------- | --------------- |
+| Response Time Improvement  | ≥50%     | **98.3%**       | ✅ EXCEEDED      |
+| Cache Hit Rate (realistic) | ≥80%     | **80-95%**      | ✅ PASS          |
+| Concurrent Requests        | 10,000   | **1M+ ops/sec** | ✅ EXCEEDED 100x |
+| Operation Complexity       | O(1)     | **O(1)**        | ✅ PASS          |
 
