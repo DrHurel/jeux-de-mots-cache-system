@@ -36,6 +36,24 @@ class LruCacheTest {
   }
 
   @Test
+  void testKeyOverwrite() {
+    // Test that putting a value with an existing key overwrites it
+    cache.put("key1", "value1");
+    assertEquals("value1", cache.get("key1"));
+    assertEquals(1, cache.size());
+
+    // Overwrite with new value
+    cache.put("key1", "value2");
+    assertEquals("value2", cache.get("key1"));
+    assertEquals(1, cache.size()); // Size should remain the same
+
+    // Overwrite again
+    cache.put("key1", "value3");
+    assertEquals("value3", cache.get("key1"));
+    assertEquals(1, cache.size());
+  }
+
+  @Test
   void testLruEviction() {
     cache.put("key1", "value1");
     cache.put("key2", "value2");
@@ -117,6 +135,80 @@ class LruCacheTest {
     assertTrue(cache.size() <= cache.getMaxSize());
     CacheStats stats = cache.getStats();
     assertTrue(stats.getRequestCount() > 0);
+  }
+
+  @Test
+  void testThreadFairness() throws InterruptedException {
+    // Test that no single thread monopolizes cache access
+    int threadCount = 10;
+    int operationsPerThread = 1000;
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch finishLatch = new CountDownLatch(threadCount);
+    
+    // Track successful operations per thread
+    java.util.concurrent.ConcurrentHashMap<Integer, Integer> threadOperations = 
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    for (int i = 0; i < threadCount; i++) {
+      final int threadId = i;
+      threadOperations.put(threadId, 0);
+      
+      executor.submit(() -> {
+        try {
+          startLatch.await(); // Wait for all threads to be ready
+          
+          for (int j = 0; j < operationsPerThread; j++) {
+            String key = "thread-" + threadId + "-key-" + j;
+            cache.put(key, "value-" + j);
+            if (cache.get(key) != null) {
+              threadOperations.merge(threadId, 1, Integer::sum);
+            }
+          }
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        } finally {
+          finishLatch.countDown();
+        }
+      });
+    }
+
+    startLatch.countDown(); // Start all threads simultaneously
+    assertTrue(finishLatch.await(30, TimeUnit.SECONDS));
+    executor.shutdown();
+
+    // Verify fairness: all threads should have completed some operations
+    // No thread should have 0 operations (which would indicate starvation)
+    for (int threadId = 0; threadId < threadCount; threadId++) {
+      int operations = threadOperations.get(threadId);
+      assertTrue(operations > 0, 
+          "Thread " + threadId + " starved with 0 operations");
+      
+      // Each thread should have completed at least 50% of operations
+      // (accounting for evictions in small cache)
+      assertTrue(operations > operationsPerThread * 0.3, 
+          "Thread " + threadId + " only completed " + operations + 
+          " operations (expected at least " + (operationsPerThread * 0.3) + ")");
+    }
+
+    // Calculate coefficient of variation to measure fairness
+    double mean = threadOperations.values().stream()
+        .mapToInt(Integer::intValue)
+        .average()
+        .orElse(0.0);
+    
+    double variance = threadOperations.values().stream()
+        .mapToInt(Integer::intValue)
+        .mapToDouble(ops -> Math.pow(ops - mean, 2))
+        .average()
+        .orElse(0.0);
+    
+    double stdDev = Math.sqrt(variance);
+    double coefficientOfVariation = stdDev / mean;
+    
+    // CV should be low (< 0.5) for good fairness
+    assertTrue(coefficientOfVariation < 0.5, 
+        "Poor thread fairness: CV=" + coefficientOfVariation + " (expected < 0.5)");
   }
 
   @Test

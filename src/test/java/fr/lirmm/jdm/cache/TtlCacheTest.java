@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,6 +41,24 @@ class TtlCacheTest {
   @Test
   void testGetMiss() {
     assertNull(cache.get("nonexistent"));
+  }
+
+  @Test
+  void testKeyOverwrite() {
+    // Test that putting a value with an existing key overwrites it
+    cache.put("key1", "value1");
+    assertEquals("value1", cache.get("key1"));
+    assertEquals(1, cache.size());
+
+    // Overwrite with new value
+    cache.put("key1", "value2");
+    assertEquals("value2", cache.get("key1"));
+    assertEquals(1, cache.size()); // Size should remain the same
+
+    // Overwrite again
+    cache.put("key1", "value3");
+    assertEquals("value3", cache.get("key1"));
+    assertEquals(1, cache.size());
   }
 
   @Test
@@ -135,6 +154,94 @@ class TtlCacheTest {
     assertTrue(cache.size() <= cache.getMaxSize());
     CacheStats stats = cache.getStats();
     assertTrue(stats.getRequestCount() > 0);
+  }
+
+  @Test
+  void testThreadFairness() throws InterruptedException {
+    // Test that no single thread monopolizes cache access under contention
+    int threadCount = 10;
+    int operationsPerThread = 1000;
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch finishLatch = new CountDownLatch(threadCount);
+
+    // Track successful operations per thread
+    java.util.concurrent.ConcurrentHashMap<Integer, Integer> threadOperations =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
+    for (int i = 0; i < threadCount; i++) {
+      final int threadId = i;
+      executor.submit(
+          () -> {
+            try {
+              // Wait for all threads to be ready
+              startLatch.await();
+
+              int successCount = 0;
+              for (int j = 0; j < operationsPerThread; j++) {
+                String key = "key-" + (j % 20); // Use 20 keys to create contention
+                String value = "value-" + threadId + "-" + j;
+
+                try {
+                  cache.put(key, value);
+                  String retrieved = cache.get(key);
+                  if (retrieved != null) {
+                    successCount++;
+                  }
+                } catch (Exception ignored) {
+                  // Cache operations might fail under contention, that's okay
+                }
+              }
+
+              threadOperations.put(threadId, successCount);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            } finally {
+              finishLatch.countDown();
+            }
+          });
+    }
+
+    // Start all threads simultaneously
+    startLatch.countDown();
+
+    // Wait for all threads to complete
+    assertTrue(finishLatch.await(30, TimeUnit.SECONDS), "All threads should complete within 30 seconds");
+
+    executor.shutdown();
+    assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+
+    // Verify fairness: no thread should be starved (have 0 operations)
+    for (int i = 0; i < threadCount; i++) {
+      Integer operations = threadOperations.get(i);
+      assertNotNull(operations, "Thread " + i + " should have recorded operations");
+      assertTrue(
+          operations > 0,
+          "Thread " + i + " should have completed at least some operations, but got: " + operations);
+    }
+
+    // Calculate coefficient of variation to measure fairness
+    double sum = 0;
+    for (Integer ops : threadOperations.values()) {
+      sum += ops;
+    }
+    double mean = sum / threadCount;
+
+    double variance = 0;
+    for (Integer ops : threadOperations.values()) {
+      variance += Math.pow(ops - mean, 2);
+    }
+    variance /= threadCount;
+    double stdDev = Math.sqrt(variance);
+    double coefficientOfVariation = stdDev / mean;
+
+    // CV should be less than 0.5 for reasonable fairness
+    // (lower is better, 0 would be perfectly fair)
+    assertTrue(
+        coefficientOfVariation < 0.5,
+        String.format(
+            "Coefficient of variation should be < 0.5 for fair thread scheduling, got: %.3f (mean=%.1f, stdDev=%.1f)",
+            coefficientOfVariation, mean, stdDev));
   }
 
   @Test
