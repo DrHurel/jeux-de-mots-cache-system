@@ -2,6 +2,7 @@ package fr.lirmm.jdm.cache;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.StampedLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +29,9 @@ public class LruCache<K, V> implements Cache<K, V> {
   private final int maxSize;
   private final Map<K, V> cache;
   private final StampedLock lock;
-  private final CacheStats.Builder statsBuilder;
+  private final AtomicLong hits;
+  private final AtomicLong misses;
+  private final AtomicLong evictions;
 
   /**
    * Creates a new LRU cache with the specified maximum size.
@@ -42,7 +45,9 @@ public class LruCache<K, V> implements Cache<K, V> {
     }
     this.maxSize = maxSize;
     this.lock = new StampedLock();
-    this.statsBuilder = new CacheStats.Builder();
+    this.hits = new AtomicLong(0);
+    this.misses = new AtomicLong(0);
+    this.evictions = new AtomicLong(0);
 
     // LinkedHashMap with access-order mode (true) for LRU behavior
     this.cache =
@@ -51,7 +56,7 @@ public class LruCache<K, V> implements Cache<K, V> {
           protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
             boolean shouldRemove = size() > LruCache.this.maxSize;
             if (shouldRemove) {
-              statsBuilder.recordEviction();
+              evictions.incrementAndGet();
               if (DEBUG_ENABLED) {
                 logger.debug("Evicting LRU entry: {}", eldest.getKey());
               }
@@ -96,12 +101,12 @@ public class LruCache<K, V> implements Cache<K, V> {
     
     // Update stats (separate from read operation)
     if (value != null) {
-      statsBuilder.recordHit();
+      hits.incrementAndGet();
       if (TRACE_ENABLED) {
         logger.trace("Cache hit for key: {}", key);
       }
     } else {
-      statsBuilder.recordMiss();
+      misses.incrementAndGet();
       if (TRACE_ENABLED) {
         logger.trace("Cache miss for key: {}", key);
       }
@@ -145,7 +150,9 @@ public class LruCache<K, V> implements Cache<K, V> {
     try {
       int size = cache.size();
       cache.clear();
-      statsBuilder.reset();
+      hits.set(0);
+      misses.set(0);
+      evictions.set(0);
       logger.info("Cleared cache ({} entries removed)", size);
     } finally {
       lock.unlockWrite(stamp);
@@ -156,7 +163,7 @@ public class LruCache<K, V> implements Cache<K, V> {
   public CacheStats getStats() {
     long stamp = lock.readLock();
     try {
-      return statsBuilder.build(cache.size());
+      return new CacheStats(hits.get(), misses.get(), evictions.get(), cache.size());
     } finally {
       lock.unlockRead(stamp);
     }
