@@ -2,6 +2,8 @@ package fr.lirmm.jdm.example;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import fr.lirmm.jdm.cache.CacheStats;
 import fr.lirmm.jdm.client.JdmApiException;
@@ -23,6 +25,8 @@ import fr.lirmm.jdm.client.model.RelationsResponse;
  * </ul>
  */
 public class JdmClientExample {
+  
+  private static final Logger logger = Logger.getLogger(JdmClientExample.class.getName());
 
   public static void main(String[] args) {
     System.out.println("=== JDM Cache Client Example ===\n");
@@ -37,9 +41,10 @@ public class JdmClientExample {
       // Example 3: Exploring semantic relations
       exploreRelations();
 
-    } catch (Exception e) {
-      System.err.println("Error: " + e.getMessage());
-      e.printStackTrace();
+    } catch (JdmApiException e) {
+      logger.log(Level.SEVERE, "JDM API error: " + e.getMessage(), e);
+    } catch (RuntimeException e) {
+      logger.log(Level.SEVERE, "Unexpected error: " + e.getMessage(), e);
     }
   }
 

@@ -65,8 +65,6 @@ public class LargeScaleLoadTest {
         logger.info("Preparing workload: {} threads × {} requests = {} total", 
             threads, requestsPerThread, totalRequests);
         
-        long testStartTime = System.nanoTime();
-        
         // Submit all worker threads
         for (int t = 0; t < threads; t++) {
             final int threadId = t;
@@ -198,8 +196,6 @@ public class LargeScaleLoadTest {
         logger.info("Preparing TTL cache workload: {} threads × {} requests = {} total", 
             threads, requestsPerThread, totalRequests);
         
-        long testStartTime = System.nanoTime();
-        
         // Submit all worker threads
         for (int t = 0; t < threads; t++) {
             final int threadId = t;
@@ -259,8 +255,8 @@ public class LargeScaleLoadTest {
         executor.awaitTermination(30, TimeUnit.SECONDS);
         
         // Cleanup TTL cache
-        if (cache instanceof AutoCloseable) {
-            ((AutoCloseable) cache).close();
+        if (cache instanceof AutoCloseable closeable) {
+            closeable.close();
         }
         
         // Calculate metrics

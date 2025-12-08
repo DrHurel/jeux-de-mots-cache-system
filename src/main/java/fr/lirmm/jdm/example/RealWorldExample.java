@@ -9,6 +9,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import fr.lirmm.jdm.cache.CacheStats;
+import fr.lirmm.jdm.client.JdmApiException;
 import fr.lirmm.jdm.client.JdmClient;
 import fr.lirmm.jdm.client.model.PublicNode;
 import fr.lirmm.jdm.client.model.PublicNodeType;
@@ -112,8 +113,7 @@ public class RealWorldExample {
         System.out.println("First pass - cache misses (fetching from API)...");
         long start1 = System.currentTimeMillis();
         for (String word : commonWords) {
-            PublicNode node = client.getNodeByName(word);
-            // Simulate some processing
+            client.getNodeByName(word); // Fetch and cache
         }
         long duration1 = System.currentTimeMillis() - start1;
         System.out.println("⏱️  Duration: " + duration1 + "ms");
@@ -121,8 +121,7 @@ public class RealWorldExample {
         System.out.println("\nSecond pass - cache hits (from memory)...");
         long start2 = System.currentTimeMillis();
         for (String word : commonWords) {
-            PublicNode node = client.getNodeByName(word);
-            // Simulate some processing
+            client.getNodeByName(word); // Retrieved from cache
         }
         long duration2 = System.currentTimeMillis() - start2;
         System.out.println("⏱️  Duration: " + duration2 + "ms");
@@ -162,7 +161,7 @@ public class RealWorldExample {
         
         // Second call - cache hit
         long start2 = System.nanoTime();
-        List<PublicNodeType> types2 = client.getNodeTypes();
+        client.getNodeTypes(); // Cached result
         long duration2 = (System.nanoTime() - start2) / 1_000_000;
         System.out.println("   Second call: " + duration2 + "ms (from cache)");
         
@@ -171,7 +170,7 @@ public class RealWorldExample {
         
         // Third call - cache miss (expired)
         long start3 = System.nanoTime();
-        List<PublicNodeType> types3 = client.getNodeTypes();
+        client.getNodeTypes(); // Cache expired, refetched from API
         long duration3 = (System.nanoTime() - start3) / 1_000_000;
         System.out.println("   Third call: " + duration3 + "ms (API call - cache expired)");
         
@@ -208,12 +207,15 @@ public class RealWorldExample {
                     // Each thread makes multiple API calls
                     for (int j = 0; j < 10; j++) {
                         String word = words[ThreadLocalRandom.current().nextInt(words.length)];
-                        PublicNode node = client.getNodeByName(word);
+                        client.getNodeByName(word); // Fetch from cache or API
                         // Simulate processing
                         Thread.sleep(10);
                     }
-                } catch (Exception e) {
-                    System.err.println("❌ Error: " + e.getMessage());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    System.err.println("❌ Thread interrupted: " + e.getMessage());
+                } catch (JdmApiException e) {
+                    System.err.println("❌ API Error: " + e.getMessage());
                 } finally {
                     completionLatch.countDown();
                 }

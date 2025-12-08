@@ -30,19 +30,15 @@ public class BenchmarkReportGenerator {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     
     // Benchmark configuration constants
-    private static final int SMALL_CACHE_SIZE = 100;
-    private static final int MEDIUM_CACHE_SIZE = 500;
     private static final int LARGE_CACHE_SIZE = 1000;
     private static final int XLARGE_CACHE_SIZE = 5000;
     private static final int XXLARGE_CACHE_SIZE = 10000;
     
     private static final int DEFAULT_OPERATIONS = 10000;
-    private static final int COMPARISON_OPERATIONS = 5000;
     private static final int OPS_PER_THREAD = 1000;
     
     // Conversion constants
     private static final double NS_TO_US = 1000.0;
-    private static final int WRITE_READ_RATIO = 3; // 1 write for every 2 reads
     
     public static void main(String[] args) throws Exception {
         System.out.println("Starting Comprehensive Cache Benchmark...\n");
@@ -333,8 +329,8 @@ public class BenchmarkReportGenerator {
             ttlStats.getEvictionCount()));
         
         // Cleanup
-        if (ttlCache instanceof AutoCloseable) {
-            ((AutoCloseable) ttlCache).close();
+        if (ttlCache instanceof AutoCloseable closeable) {
+            closeable.close();
         }
         
         sb.append("\n**Analysis**: LRU provides better performance for frequent access patterns, ");
