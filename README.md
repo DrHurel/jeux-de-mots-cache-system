@@ -5,14 +5,16 @@ A high-performance Java client library for the [Jeux de Mots (JDM) API](https://
 ## Features
 
 - ✅ **Full JDM API Support**: Complete coverage of the JDM semantic network API endpoints
-- ⚡ **High-Performance Caching**: Reduces API response times by at least 50% for repeated requests
+- ⚡ **High-Performance Caching**: Up to **342% throughput improvement** with optimized implementations
 - 🔒 **Thread-Safe**: Handles up to 10,000+ concurrent requests safely
-- 🎯 **Two Caching Strategies**: 
+- 🎯 **Multiple Caching Strategies**: 
   - **LRU (Least Recently Used)**: O(1) eviction based on access patterns
   - **TTL (Time-To-Live)**: Automatic expiration after configurable duration
+  - **ShardedCache**: +342% throughput for high concurrency (10-200 threads)
+  - **ThreadLocalCache**: +145% throughput for read-heavy workloads
 - 📊 **Real-Time Metrics**: Track cache hits, misses, evictions, and success rates
 - 🛠️ **Configurable**: Customize cache size, eviction policy, and TTL
-- 📝 **Well-Documented**: Comprehensive Javadoc and examples
+- 📝 **Well-Documented**: Comprehensive Javadoc and [optimization guide](OPTIMIZATION_GUIDE.md)
 - ✨ **Java 21**: Modern Java features and best practices
 
 ## Requirements
@@ -214,6 +216,37 @@ mvn test jacoco:report
 - **Integration Tests**: JDM API client with mock server
 - **Concurrency Tests**: 10+ threads, 1000+ operations per thread
 - **Performance Tests**: Benchmark cache vs. no-cache scenarios
+
+## Performance Optimization
+
+This library includes multiple high-performance cache implementations. See the **[Optimization Guide](OPTIMIZATION_GUIDE.md)** for:
+
+- **Benchmark Results**: Comprehensive performance comparisons
+- **Decision Matrix**: Choose the right strategy for your workload
+- **Usage Examples**: Production-ready code samples
+- **Best Practices**: Tuning and monitoring recommendations
+
+### Quick Recommendations
+
+| Concurrency | Workload Type | Recommended Strategy | Improvement |
+|-------------|---------------|---------------------|-------------|
+| 10-50 threads | Any | **ShardedCache** | +162% to +342% |
+| Any | Read-heavy (>90%) | **ThreadLocalCache** | +145% |
+| <10 threads | Low load | **Baseline LRU** | Simple & effective |
+
+**Example: High-Concurrency Setup**
+
+```java
+// Optimal for 50+ concurrent threads
+CacheConfig config = CacheConfig.builder()
+    .maxSize(10_000)
+    .ttl(Duration.ofMinutes(15))
+    .evictionStrategy(EvictionStrategy.LRU)
+    .build();
+
+Cache<String, Data> cache = new ShardedCache<>(config);
+// Achieves ~2.1M ops/sec vs 820K baseline
+```
 
 ## Contributing
 
