@@ -37,6 +37,9 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class ThreadLocalCache<K, V> implements Cache<K, V>, AutoCloseable {
     
+    /** Default maximum size for thread-local L1 cache */
+    private static final int DEFAULT_THREAD_LOCAL_MAX_SIZE = 100;
+    
     private final Cache<K, V> backingCache;
     private final int threadLocalMaxSize;
     private final ThreadLocal<SoftReference<LocalCache<K, V>>> threadLocalCache;
@@ -51,9 +54,10 @@ public class ThreadLocalCache<K, V> implements Cache<K, V>, AutoCloseable {
      * Creates a thread-local cache with default L1 size.
      * 
      * @param backingCache The shared L2 cache
+     * @throws IllegalArgumentException if backingCache is null
      */
     public ThreadLocalCache(Cache<K, V> backingCache) {
-        this(backingCache, 100); // Default 100 entries per thread
+        this(backingCache, DEFAULT_THREAD_LOCAL_MAX_SIZE);
     }
     
     /**
@@ -61,8 +65,15 @@ public class ThreadLocalCache<K, V> implements Cache<K, V>, AutoCloseable {
      * 
      * @param backingCache The shared L2 cache
      * @param threadLocalMaxSize Max entries per thread's L1 cache
+     * @throws IllegalArgumentException if backingCache is null or threadLocalMaxSize is not positive
      */
     public ThreadLocalCache(Cache<K, V> backingCache, int threadLocalMaxSize) {
+        if (backingCache == null) {
+            throw new IllegalArgumentException("Backing cache must not be null");
+        }
+        if (threadLocalMaxSize <= 0) {
+            throw new IllegalArgumentException("Thread-local max size must be positive, got: " + threadLocalMaxSize);
+        }
         this.backingCache = backingCache;
         this.threadLocalMaxSize = threadLocalMaxSize;
         this.threadLocalCache = ThreadLocal.withInitial(() -> 

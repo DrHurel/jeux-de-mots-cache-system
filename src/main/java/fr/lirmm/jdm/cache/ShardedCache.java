@@ -28,6 +28,9 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class ShardedCache<K, V> implements Cache<K, V> {
     
+    /** Default multiplier for calculating optimal shard count based on CPU cores */
+    private static final int DEFAULT_SHARD_MULTIPLIER = 4;
+    
     private final List<Cache<K, V>> shards;
     private final int shardCount;
     private final AtomicLong totalHits = new AtomicLong(0);
@@ -35,11 +38,12 @@ public class ShardedCache<K, V> implements Cache<K, V> {
     
     /**
      * Creates a sharded cache with optimal shard count (based on CPU cores).
+     * Uses {@code Runtime.getRuntime().availableProcessors() * DEFAULT_SHARD_MULTIPLIER} shards.
      * 
      * @param config Cache configuration
      */
     public ShardedCache(CacheConfig config) {
-        this(config, Runtime.getRuntime().availableProcessors() * 4);
+        this(config, Runtime.getRuntime().availableProcessors() * DEFAULT_SHARD_MULTIPLIER);
     }
     
     /**
@@ -47,10 +51,14 @@ public class ShardedCache<K, V> implements Cache<K, V> {
      * 
      * @param config Cache configuration
      * @param shardCount Number of shards (must be power of 2 for best performance)
+     * @throws IllegalArgumentException if config is null or shardCount is not positive
      */
     public ShardedCache(CacheConfig config, int shardCount) {
+        if (config == null) {
+            throw new IllegalArgumentException("Cache configuration must not be null");
+        }
         if (shardCount <= 0) {
-            throw new IllegalArgumentException("Shard count must be positive");
+            throw new IllegalArgumentException("Shard count must be positive, got: " + shardCount);
         }
         
         // Round up to nearest power of 2 for fast modulo

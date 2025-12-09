@@ -109,8 +109,12 @@ public class JdmClient {
    * @param nodeName the node name
    * @return the node, or null if not found
    * @throws JdmApiException if the API request fails
+   * @throws IllegalArgumentException if nodeName is null or empty
    */
   public PublicNode getNodeByName(String nodeName) throws JdmApiException {
+    if (nodeName == null || nodeName.trim().isEmpty()) {
+      throw new IllegalArgumentException("Node name must not be null or empty");
+    }
     String cacheKey = "node:name:" + nodeName;
     return getCached(cacheKey, () -> {
       String url = baseUrl + "/v0/node_by_name/" + nodeName;
@@ -124,8 +128,12 @@ public class JdmClient {
    * @param nodeName the node name
    * @return list of refinement nodes
    * @throws JdmApiException if the API request fails
+   * @throws IllegalArgumentException if nodeName is null or empty
    */
   public List<PublicNode> getRefinements(String nodeName) throws JdmApiException {
+    if (nodeName == null || nodeName.trim().isEmpty()) {
+      throw new IllegalArgumentException("Node name must not be null or empty");
+    }
     String cacheKey = "refinements:" + nodeName;
     return getCached(cacheKey, () -> {
       String url = baseUrl + "/v0/refinements/" + nodeName;
@@ -283,6 +291,7 @@ public class JdmClient {
     }
   }
 
+  @SuppressWarnings("NullAway")
   private String executeRequest(String url) throws JdmApiException {
     Request request = new Request.Builder().url(url).get().build();
 
@@ -291,11 +300,12 @@ public class JdmClient {
         throw new JdmApiException("API request failed with status: " + response.code());
       }
 
-      if (response.body() == null) {
+      okhttp3.ResponseBody body = response.body();
+      if (body == null) {
         throw new JdmApiException("Empty response body");
       }
 
-      return response.body().string();
+      return body.string();
     } catch (IOException e) {
       throw new JdmApiException("HTTP request failed for URL: " + url, e);
     }

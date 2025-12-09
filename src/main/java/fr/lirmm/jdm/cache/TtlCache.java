@@ -20,13 +20,23 @@ import org.slf4j.LoggerFactory;
  * <p>Thread safety is provided through a ConcurrentHashMap for the main storage and atomic
  * counters for lock-free statistics tracking.
  *
+ * <p>This cache implements {@link AutoCloseable} for proper resource cleanup.
+ * Use with try-with-resources when possible:
+ * <pre>{@code
+ * try (TtlCache<String, User> cache = new TtlCache<>(maxSize, duration)) {
+ *     // Use cache
+ * } // Automatic cleanup of background executor
+ * }</pre>
+ *
  * @param <K> the type of keys maintained by this cache
  * @param <V> the type of mapped values
  */
-public class TtlCache<K, V> implements Cache<K, V> {
+public class TtlCache<K, V> implements Cache<K, V>, AutoCloseable {
 
   private static final Logger logger = LoggerFactory.getLogger(TtlCache.class);
-  private static final int CLEANUP_DIVISOR = 2;
+  /** Divisor for calculating cleanup interval (TTL / CLEANUP_DIVISOR) */
+  private static final int CLEANUP_INTERVAL_DIVISOR = 2;
+  /** Minimum cleanup interval to prevent excessive cleanup cycles */
   private static final long MIN_CLEANUP_INTERVAL_MS = 1000L;
   private static final boolean TRACE_ENABLED = logger.isTraceEnabled();
   private static final boolean DEBUG_ENABLED = logger.isDebugEnabled();
@@ -68,7 +78,7 @@ public class TtlCache<K, V> implements Cache<K, V> {
       return thread;
     });
 
-    long cleanupIntervalMs = Math.max(ttlMillis / CLEANUP_DIVISOR, MIN_CLEANUP_INTERVAL_MS);
+    long cleanupIntervalMs = Math.max(ttlMillis / CLEANUP_INTERVAL_DIVISOR, MIN_CLEANUP_INTERVAL_MS);
     cleanupExecutor.scheduleAtFixedRate(
         this::cleanupExpiredEntries, cleanupIntervalMs, cleanupIntervalMs, TimeUnit.MILLISECONDS);
 
@@ -194,10 +204,21 @@ public class TtlCache<K, V> implements Cache<K, V> {
    * Shuts down the background cleanup executor.
    *
    * <p>This method should be called when the cache is no longer needed to free up resources.
+   * Alternatively, use try-with-resources for automatic cleanup.
    */
   public void shutdown() {
     cleanupExecutor.shutdown();
     logger.info("TTL cache cleanup executor shut down");
+  }
+
+  /**
+   * Closes the cache and shuts down the background cleanup executor.
+   * 
+   * <p>This method is called automatically when using try-with-resources.
+   */
+  @Override
+  public void close() {
+    shutdown();
   }
 
   private void cleanupExpiredEntries() {
