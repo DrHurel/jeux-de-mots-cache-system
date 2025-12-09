@@ -24,10 +24,18 @@ import java.util.concurrent.atomic.AtomicLong;
  * - Potential staleness (thread-local cache may be outdated)
  * - Not suitable for write-heavy workloads
  * 
+ * <p>This cache implements {@link AutoCloseable} for proper resource cleanup.
+ * Use with try-with-resources when possible:
+ * <pre>{@code
+ * try (ThreadLocalCache<String, User> cache = new ThreadLocalCache<>(backingCache)) {
+ *     // Use cache
+ * } // Automatic cleanup
+ * }</pre>
+ * 
  * @param <K> Key type
  * @param <V> Value type
  */
-public class ThreadLocalCache<K, V> implements Cache<K, V> {
+public class ThreadLocalCache<K, V> implements Cache<K, V>, AutoCloseable {
     
     private final Cache<K, V> backingCache;
     private final int threadLocalMaxSize;
@@ -112,6 +120,7 @@ public class ThreadLocalCache<K, V> implements Cache<K, V> {
     /**
      * Gets the current size from backing cache stats.
      */
+    @Override
     public int size() {
         return (int) backingCache.getStats().getSize();
     }
@@ -218,5 +227,19 @@ public class ThreadLocalCache<K, V> implements Cache<K, V> {
             long totalRequests = l1Hits + l1Misses + l2Misses;
             return totalRequests == 0 ? 0.0 : (double) totalHits / totalRequests;
         }
+    }
+    
+    /**
+     * Cleans up thread-local resources.
+     * 
+     * <p>This method removes the thread-local cache for the current thread, helping to prevent
+     * memory leaks in environments with thread pools. While SoftReferences provide automatic
+     * memory management under pressure, explicit cleanup is recommended for long-lived threads.
+     * 
+     * <p>This method is idempotent and can be called multiple times safely.
+     */
+    @Override
+    public void close() {
+        threadLocalCache.remove();
     }
 }

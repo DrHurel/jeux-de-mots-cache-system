@@ -40,6 +40,13 @@ public interface Cache<K, V> {
   void clear();
 
   /**
+   * Returns the current number of entries in the cache.
+   *
+   * @return the number of entries currently stored in the cache
+   */
+  int size();
+
+  /**
    * Returns the current statistics for this cache.
    *
    * @return a CacheStats object containing hit/miss counts and other metrics

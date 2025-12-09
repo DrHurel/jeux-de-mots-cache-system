@@ -167,6 +167,7 @@ public class TtlCache<K, V> implements Cache<K, V> {
    *
    * @return the number of entries in the cache
    */
+  @Override
   public int size() {
     return cache.size();
   }

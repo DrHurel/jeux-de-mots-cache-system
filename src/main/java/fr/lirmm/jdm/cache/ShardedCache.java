@@ -138,10 +138,13 @@ public class ShardedCache<K, V> implements Cache<K, V> {
      * 
      * @return Approximate total size
      */
-    public long size() {
-        return shards.stream()
-            .mapToLong(shard -> shard.getStats().getSize())
+    @Override
+    public int size() {
+        long totalSize = shards.stream()
+            .mapToLong(shard -> shard.size())
             .sum();
+        // Cap at Integer.MAX_VALUE to match interface contract
+        return (int) Math.min(totalSize, Integer.MAX_VALUE);
     }
     
     /**
